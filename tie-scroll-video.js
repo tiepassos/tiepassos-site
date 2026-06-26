@@ -59,3 +59,4 @@ class TieScrollVideo extends HTMLElement {
 if (!customElements.get('tie-scroll-video')) {
   customElements.define('tie-scroll-video', TieScrollVideo);
 }
+}
