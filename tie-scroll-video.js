@@ -7,6 +7,18 @@ class TieScrollVideo extends HTMLElement {
     var src = this.getAttribute('video-src') ||
       'https://video.wixstatic.com/video/8d49b9_057dda1340054c4882cf3e63fedb5a0a/1080p/mp4/file.mp4';
 
+    var fontStack = "'Gotham','Gotham SSm','Montserrat','Helvetica Neue',Arial,sans-serif";
+
+    // quebra cada linha em <span> por letra, pra animar uma a uma
+    function splitLetters(text) {
+      var html = '';
+      for (var i = 0; i < text.length; i++) {
+        var ch = text[i] === ' ' ? '&nbsp;' : text[i];
+        html += '<span class="ltr" data-i="' + i + '" style="display:inline-block;opacity:0;filter:blur(8px);transform:translateY(14px);will-change:opacity,filter,transform;">' + ch + '</span>';
+      }
+      return html;
+    }
+
     this.innerHTML =
       '<div class="tw" style="position:relative;width:100%;height:' + scroll + 'vh;background:#fff;">' +
         '<div class="ts" style="position:sticky;top:0;width:100%;height:100vh;display:flex;align-items:center;justify-content:center;background:#fff;overflow:hidden;">' +
@@ -15,19 +27,20 @@ class TieScrollVideo extends HTMLElement {
             '<source src="' + src + '" type="video/mp4" />' +
           '</video>' +
           '<div class="tcap" style="' +
-            'position:absolute;left:50%;bottom:10%;transform:translate(-50%,20px);' +
-            'text-align:center;color:#fff;font-family:Helvetica,Arial,sans-serif;' +
-            'pointer-events:none;opacity:0;will-change:opacity,transform;' +
+            'position:absolute;top:50%;left:42%;transform:translate(-50%,-50%);' +   // centro deslocado à esquerda
+            'text-align:center;color:#fff;font-family:' + fontStack + ';' +
+            'pointer-events:none;' +
             'text-shadow:0 2px 14px rgba(0,0,0,0.5),0 1px 3px rgba(0,0,0,0.65);">' +
-            '<div class="tcap1" style="font-weight:700;font-size:clamp(32px,6vw,80px);letter-spacing:0.03em;line-height:1.05;">' + line1 + '</div>' +
-            '<div class="tcap2" style="font-weight:400;font-size:clamp(16px,2.4vw,30px);letter-spacing:0.18em;text-transform:uppercase;margin-top:0.4em;opacity:0.92;">' + line2 + '</div>' +
+            '<div class="tcap1" style="font-weight:700;font-size:clamp(32px,6vw,80px);letter-spacing:0.03em;line-height:1.05;">' + splitLetters(line1) + '</div>' +
+            '<div class="tcap2" style="font-weight:400;font-size:clamp(16px,2.4vw,30px);letter-spacing:0.18em;text-transform:uppercase;margin-top:0.5em;">' + splitLetters(line2) + '</div>' +
           '</div>' +
         '</div>' +
       '</div>';
 
     var wrap  = this.querySelector('.tw');
     var video = this.querySelector('.tv');
-    var cap   = this.querySelector('.tcap');
+    var letters = this.querySelectorAll('.ltr');
+    var totalLetters = letters.length;
     var dur = 0, ready = false, target = 0, current = 0;
 
     video.addEventListener('loadedmetadata', function () {
@@ -43,23 +56,44 @@ class TieScrollVideo extends HTMLElement {
       return scrolled / scrollable;
     }
 
-    // mapeia o texto: invisível -> fade in -> visível -> fade out
-    function captionOpacity(p) {
-      // p de 0 a 1 (progresso do scroll)
-      if (p < 0.05) return p / 0.05;            // fade-in rápido no começo (0 a 0.05)
-      if (p < 0.45) return 1;                    // visível (0.05 a 0.45)
-      if (p < 0.65) return 1 - (p - 0.45) / 0.2; // fade-out (0.45 a 0.65)
-      return 0;                                  // sumido no resto
+    // O texto começa a aparecer só na METADE (0.5) e termina a entrada em 0.72.
+    // Some depois de 0.85.
+    var START = 0.50;   // começa a aparecer
+    var END   = 0.72;   // todas as letras já entraram
+    var FADE_OUT_START = 0.85;
+    var FADE_OUT_END   = 0.95;
+
+    function updateCaption(p) {
+      // fase de saída
+      if (p >= FADE_OUT_START) {
+        var fo = 1 - Math.min((p - FADE_OUT_START) / (FADE_OUT_END - FADE_OUT_START), 1);
+        for (var k = 0; k < totalLetters; k++) {
+          letters[k].style.opacity = fo;
+          letters[k].style.filter = 'blur(' + (1 - fo) * 6 + 'px)';
+        }
+        return;
+      }
+      // fase de entrada letra a letra
+      var span = END - START;
+      for (var i = 0; i < totalLetters; i++) {
+        // cada letra tem sua própria janelinha dentro de [START, END]
+        var lstart = START + (i / totalLetters) * span;
+        var lend = lstart + span / totalLetters;
+        var t = (p - lstart) / (lend - lstart);
+        t = Math.min(Math.max(t, 0), 1);
+        // easing suave
+        var e = t * t * (3 - 2 * t);
+        letters[i].style.opacity = e;
+        letters[i].style.filter = 'blur(' + (1 - e) * 8 + 'px)';
+        letters[i].style.transform = 'translateY(' + (14 - e * 14) + 'px)';
+      }
     }
 
     function onScroll() {
       if (!ready || dur === 0) return;
       var p = progress();
       target = p * dur;
-      var o = captionOpacity(p);
-      cap.style.opacity = o;
-      // sobe suavemente enquanto aparece
-      cap.style.transform = 'translate(-50%,' + (20 - o * 20) + 'px)';
+      updateCaption(p);
     }
 
     function tick() {
